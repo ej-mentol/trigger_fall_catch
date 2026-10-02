@@ -1,0 +1,19 @@
+@PointClass size(-8 -8 -8, 8 8 8) color(255 128 0) = trigger_fall_catch : "Catches players that fall below a reference point"
+[
+	targetname(target_source) : "Name"
+	fire_target(target_destination) : "Fire Target" : : "Fired with the fallen player as activator. If empty, the player is teleported to Destination."
+	dest_target1(target_destination) : "Destination" : : "Teleport destination. Also the reference point with the Reference = Destination flag. Not used for teleport if Fire Target is set."
+	watch(target_destination) : "Watch Entity" : : "Reference point instead of this entity."
+	offset(string) : "Offset" : "-8" : "Player is fallen when feet (origin Z + mins Z) < reference Z + Offset. Use a negative value. Reference: Watch Entity, else Destination if flagged, else this entity. Brushes use their center."
+	radius(string) : "Radius" : "0" : "Horizontal radius around the reference point. 0 = unlimited."
+	teleport_cooldown(string) : "Cooldown" : "0.5" : "Per-player cooldown in seconds."
+	spawnflags(flags) =
+	[
+		1 : "Start Off" : 0
+		2 : "Kill Instead of Teleport" : 0
+		4 : "Keep Angles" : 0
+		8 : "Keep Velocity" : 0
+		16 : "Reference = Destination" : 0
+		32 : "Debug Log" : 0
+	]
+]
