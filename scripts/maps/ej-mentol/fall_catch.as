@@ -1,14 +1,7 @@
-const int SF_FC_START_OFF = 1;
-const int SF_FC_KILL = 2;
-const int SF_FC_KEEP_ANGLES = 4;
-const int SF_FC_KEEP_VELOCITY = 8;
-const int SF_FC_REF_TARGET = 16;
-const int SF_FC_DEBUG = 32;
+const int SF_FC_RESPAWN = 1;
+const int SF_FC_DEBUG = 2;
 
 const SOUND_CHANNEL FC_SOUND_CHANNEL = CHAN_AUTO;
-const string FC_SOUND_FILE = "debris/alien_teleport.wav";
-const float FC_THINK_INTERVAL = 0.1f;
-const float FC_DEST_LIFT = 16.0f;
 const float FC_DEBUG_INTERVAL = 5.0f;
 
 class CFallCatch : ScriptBaseEntity
@@ -16,10 +9,14 @@ class CFallCatch : ScriptBaseEntity
 	float m_flOffset = -8.0f;
 	float m_flRadius = 0.0f;
 	float m_flCooldownTime = 0.5f;
+	float m_flScanTime = 0.1f;
 	array<float> m_flPlayerNext( 33, 0.0f );
-	string m_szFire;
-	string m_szDest;
+	string m_szTarget;
 	string m_szWatch;
+	string m_szSound;
+	float m_flVolume = 10.0f;
+	int m_iPitch = 100;
+	int m_iInitialState = 1;
 	float m_flNextDebug = 0.0f;
 	bool m_bEnabled = true;
 	bool m_bDebug = false;
@@ -36,19 +33,14 @@ class CFallCatch : ScriptBaseEntity
 			m_flRadius = atof( szValue );
 			return true;
 		}
-		else if ( szKey == "teleport_cooldown" )
+		else if ( szKey == "cooldown" )
 		{
 			m_flCooldownTime = atof( szValue );
 			return true;
 		}
-		else if ( szKey == "fire_target" )
+		else if ( szKey == "scantime" )
 		{
-			m_szFire = szValue;
-			return true;
-		}
-		else if ( szKey == "dest_target1" )
-		{
-			m_szDest = szValue;
+			m_flScanTime = atof( szValue );
 			return true;
 		}
 		else if ( szKey == "watch" )
@@ -56,23 +48,62 @@ class CFallCatch : ScriptBaseEntity
 			m_szWatch = szValue;
 			return true;
 		}
+		else if ( szKey == "sound" )
+		{
+			m_szSound = szValue;
+			return true;
+		}
+		else if ( szKey == "pitch" )
+		{
+			m_iPitch = atoi( szValue );
+			return true;
+		}
+		else if ( szKey == "initial_state" )
+		{
+			m_iInitialState = atoi( szValue );
+			return true;
+		}
 		return BaseClass.KeyValue( szKey, szValue );
+	}
+
+	void Precache()
+	{
+		BaseClass.Precache();
+		if ( m_szSound != "" )
+			g_SoundSystem.PrecacheSound( m_szSound );
 	}
 
 	void Spawn()
 	{
+		Precache();
+
 		pev.solid = SOLID_NOT;
 		pev.effects = EF_NODRAW;
 
-		m_bEnabled = ( pev.spawnflags & SF_FC_START_OFF ) == 0;
+		if ( m_flScanTime < 0.01f )
+			m_flScanTime = 0.1f;
+		if ( m_flRadius < 0.0f )
+			m_flRadius = 0.0f;
+		if ( m_flCooldownTime < 0.0f )
+			m_flCooldownTime = 0.0f;
+		m_flVolume = pev.health > 0.0f ? pev.health : 10.0f;
+		if ( m_flVolume > 10.0f )
+			m_flVolume = 10.0f;
+		if ( m_iPitch < 1 )
+			m_iPitch = 100;
+		else if ( m_iPitch > 255 )
+			m_iPitch = 255;
+
+		m_szTarget = string( pev.target );
+		m_bEnabled = m_iInitialState != 0;
 		m_bDebug = ( pev.spawnflags & SF_FC_DEBUG ) != 0;
 
 		SetThink( ThinkFunction( this.Think ) );
 		SetUse( UseFunction( this.Use ) );
-		pev.nextthink = g_Engine.time + FC_THINK_INTERVAL;
+		pev.nextthink = g_Engine.time + m_flScanTime;
 
 		if ( m_bDebug )
-			g_Game.AlertMessage( at_logged, "[fall_catch] spawned at %1, dest '%2', watch '%3', fire '%4'\n", pev.origin.ToString(), m_szDest, m_szWatch, m_szFire );
+			g_Game.AlertMessage( at_console, "[fall_catch] spawned at %1, watch '%2', target '%3', scantime %4\n", pev.origin.ToString(), m_szWatch, m_szTarget, m_flScanTime );
 	}
 
 	void Use( CBaseEntity@ pActivator, CBaseEntity@ pCaller, USE_TYPE useType, float flValue )
@@ -92,58 +123,18 @@ class CFallCatch : ScriptBaseEntity
 		return pEnt.GetOrigin();
 	}
 
-	CBaseEntity@ ResolveDestination()
-	{
-		if ( m_szDest == "" )
-			return null;
-		return g_EntityFuncs.FindEntityByTargetname( null, m_szDest );
-	}
-
 	void PlayFx( CBasePlayer@ pPlayer )
 	{
-		g_SoundSystem.EmitSound( pPlayer.edict(), FC_SOUND_CHANNEL, FC_SOUND_FILE, 1.0, ATTN_NORM );
-	}
+		if ( m_szSound == "" )
+			return;
 
-	void Teleport( CBasePlayer@ pPlayer, CBaseEntity@ pFallback )
-	{
-		CBaseEntity@ pDest = g_EntityFuncs.RandomTargetname( m_szDest );
-		if ( pDest is null )
-			@pDest = pFallback;
-
-		Vector vecDest = GetPos( pDest );
-		vecDest.z += FC_DEST_LIFT - pPlayer.pev.mins.z;
-
-		TraceResult tr;
-		for ( int j = 0; j < 4; ++j )
-		{
-			g_Utility.TraceHull( vecDest, vecDest, dont_ignore_monsters, human_hull, pDest.edict(), tr );
-			if ( tr.fAllSolid == 0 && tr.fStartSolid == 0 )
-				break;
-			vecDest.z += 24.0f;
-		}
-
-		if ( m_bDebug )
-			g_Game.AlertMessage( at_logged, "[fall_catch] teleport: from %1 to %2 (dest %3)\n", pPlayer.pev.origin.ToString(), vecDest.ToString(), GetPos( pDest ).ToString() );
-
-		g_EntityFuncs.SetOrigin( pPlayer, vecDest );
-
-		if ( ( pev.spawnflags & SF_FC_KEEP_VELOCITY ) == 0 )
-			pPlayer.pev.velocity = g_vecZero;
-
-		if ( ( pev.spawnflags & SF_FC_KEEP_ANGLES ) == 0 )
-		{
-			pPlayer.pev.angles = Vector( 0, pDest.pev.angles.y, 0 );
-			pPlayer.pev.fixangle = FAM_FORCEVIEWANGLES;
-		}
-
-		PlayFx( pPlayer );
+		g_SoundSystem.EmitSoundDyn( pPlayer.edict(), FC_SOUND_CHANNEL, m_szSound, m_flVolume * 0.1f, ATTN_NORM, 0, m_iPitch, pPlayer.entindex() );
 	}
 
 	void Scan()
 	{
-		bool bUseFire = ( m_szFire != "" );
 		bool bDebugTick = m_bDebug && g_Engine.time > m_flNextDebug;
-		CBaseEntity@ pDest = ResolveDestination();
+		bool bRespawn = ( pev.spawnflags & SF_FC_RESPAWN ) != 0;
 		Vector vecRef = self.GetOrigin();
 
 		if ( bDebugTick )
@@ -155,20 +146,10 @@ class CFallCatch : ScriptBaseEntity
 			if ( pWatch is null )
 			{
 				if ( bDebugTick )
-					g_Game.AlertMessage( at_logged, "[fall_catch] watch entity '%1' not found\n", m_szWatch );
+					g_Game.AlertMessage( at_console, "[fall_catch] watch entity '%1' not found\n", m_szWatch );
 				return;
 			}
 			vecRef = GetPos( pWatch );
-		}
-		else if ( ( pev.spawnflags & SF_FC_REF_TARGET ) != 0 )
-		{
-			if ( pDest is null )
-			{
-				if ( bDebugTick )
-					g_Game.AlertMessage( at_logged, "[fall_catch] reference = destination, but '%1' not found\n", m_szDest );
-				return;
-			}
-			vecRef = GetPos( pDest );
 		}
 
 		float flLimitZ = vecRef.z + m_flOffset;
@@ -202,39 +183,25 @@ class CFallCatch : ScriptBaseEntity
 					continue;
 			}
 
-			if ( pPlayer.pev.origin.z + pPlayer.pev.mins.z >= flLimitZ )
+			if ( flFeet >= flLimitZ )
 				continue;
 
 			if ( m_bDebug )
-				g_Game.AlertMessage( at_logged, "[fall_catch] fall: origin %1, ref %2, limit z %3\n", pPlayer.pev.origin.ToString(), vecRef.ToString(), flLimitZ );
+				g_Game.AlertMessage( at_console, "[fall_catch] fall: origin %1, ref %2, limit z %3\n", pPlayer.pev.origin.ToString(), vecRef.ToString(), flLimitZ );
 
 			m_flPlayerNext[i] = g_Engine.time + m_flCooldownTime;
 
-			if ( ( pev.spawnflags & SF_FC_KILL ) != 0 )
-			{
-				pPlayer.Killed( self.pev, GIB_NEVER );
-				continue;
-			}
+			if ( m_szTarget != "" )
+				g_EntityFuncs.FireTargets( m_szTarget, pPlayer, self, USE_TOGGLE, 0.0f );
 
-			if ( bUseFire )
-			{
-				g_EntityFuncs.FireTargets( m_szFire, pPlayer, self, USE_TOGGLE, 0.0f );
-				PlayFx( pPlayer );
-				continue;
-			}
+			if ( bRespawn )
+				g_PlayerFuncs.RespawnPlayer( pPlayer );
 
-			if ( pDest is null )
-			{
-				if ( m_bDebug )
-					g_Game.AlertMessage( at_logged, "[fall_catch] no destination found\n" );
-				continue;
-			}
-
-			Teleport( pPlayer, pDest );
+			PlayFx( pPlayer );
 		}
 
 		if ( bDebugTick )
-			g_Game.AlertMessage( at_logged, "[fall_catch] ref %1, limit z %2, lowest player #%3 feet z %4, dest found %5\n", vecRef.ToString(), flLimitZ, iLowest, flLowestFeet, pDest !is null );
+			g_Game.AlertMessage( at_console, "[fall_catch] ref %1, limit z %2, lowest player #%3 feet z %4\n", vecRef.ToString(), flLimitZ, iLowest, flLowestFeet );
 	}
 
 	void Think()
@@ -244,15 +211,14 @@ class CFallCatch : ScriptBaseEntity
 		else if ( m_bDebug && g_Engine.time > m_flNextDebug )
 		{
 			m_flNextDebug = g_Engine.time + FC_DEBUG_INTERVAL;
-			g_Game.AlertMessage( at_logged, "[fall_catch] disabled\n" );
+			g_Game.AlertMessage( at_console, "[fall_catch] disabled\n" );
 		}
 
-		pev.nextthink = g_Engine.time + FC_THINK_INTERVAL;
+		pev.nextthink = g_Engine.time + m_flScanTime;
 	}
 }
 
 void MapInit()
 {
-	g_SoundSystem.PrecacheSound( FC_SOUND_FILE );
 	g_CustomEntityFuncs.RegisterCustomEntity( "CFallCatch", "trigger_fall_catch" );
 }

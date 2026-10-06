@@ -1,0 +1,23 @@
+@PointClass size(-8 -8 -8, 8 8 8) color(255 128 0) = trigger_fall_catch : "Trigger Fall Catch"
+[
+    targetname(target_source) : "Name" : : "Needed to turn the entity On/Off via Use."
+    spawnflags(flags) =
+    [
+        1 : "Respawn Player" : 0
+        2 : "Debug Log" : 0
+    ]
+    initial_state(choices) : "Initial State" : 1 =
+    [
+        0 : "Off"
+        1 : "On"
+    ]
+    target(target_destination) : "Target" : : "Fired with the fallen player as activator. No delay in between, it replaces the activator."
+    watch(target_destination) : "Watch Entity" : : "Entity used as the reference point instead of this one. Brushes use their center."
+    offset(string) : "Offset (Z)" : "-8" : "Added to the reference Z. Fallen when feet Z < reference Z + Offset. Use a negative value."
+    radius(string) : "Radius" : "0" : "Horizontal radius around the reference point. 0 = unlimited."
+    cooldown(string) : "Cooldown (seconds)" : "0.5" : "Per-player delay before the same player can be caught again."
+    scantime(string) : "Scan Interval (seconds)" : "0.1" : "Seconds between checks. Values below 0.01 fall back to 0.1."
+    sound(sound) : "Sound" : : "Path relative to sound/. Empty = no sound. Custom sounds must be in the map .res."
+    health(integer) : "Volume (0-10, 10 = loudest)" : 10
+    pitch(integer) : "Pitch (1-255, > 100 = higher)" : 100
+]
